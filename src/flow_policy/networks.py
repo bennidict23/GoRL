@@ -1,3 +1,5 @@
+# Modified by the GoRL authors; see THIRD_PARTY_NOTICES.md.
+
 from __future__ import annotations
 
 from typing import NewType
@@ -58,7 +60,11 @@ def flow_mlp_fwd(weights: MlpWeights, *inputs_to_concat: Array) -> Array:
     return x
 
 
-def gaussian_policy_fwd(weights: MlpWeights, x: Array) -> NormalDistribution:
+def gaussian_policy_fwd(
+    weights: MlpWeights,
+    x: Array,
+    max_scale: float = 0.0,
+) -> NormalDistribution:
     """Apply hidden layers, then output projection."""
     # Final layer is split into mean and scale.
     assert weights[-1][0].shape[-1] % 2 == 0
@@ -73,29 +79,6 @@ def gaussian_policy_fwd(weights: MlpWeights, x: Array) -> NormalDistribution:
 
     mean, scale = jnp.split(x, 2, axis=-1)
     scale = nn.softplus(scale) + 1e-3
-    # Clip scale to prevent numerical overflow in log(scale)
-    # Tightened upper bound to reduce early-step KL explosions
-    scale = jnp.clip(scale, 1e-3, 10.0)
+    if max_scale > 0.0:
+        scale = jnp.minimum(scale, max_scale)
     return NormalDistribution(mean, scale)
-
-
-def q_mlp_fwd(weights: MlpWeights, obs: Array, action: Array) -> Array:
-    """Q-function forward pass: Q(s, a) = MLP([s; a]).
-
-    Input: obs (*, obs_dim), action (*, action_dim)
-    Output: Q-value (*)
-    """
-    # Concatenate observation and action
-    x = jnp.concatenate([obs, action], axis=-1)
-
-    # Apply hidden layers with SiLU activation
-    for i in range(len(weights) - 1):
-        linear, bias = weights[i]
-        x = jnp.einsum("...i,ij->...j", x, linear) + bias
-        x = nn.silu(x)
-
-    # Final layer (no activation)
-    linear, bias = weights[-1]
-    x = jnp.einsum("...i,ij->...j", x, linear) + bias
-    x = jnp.squeeze(x, axis=-1)
-    return x

@@ -1,15 +1,2 @@
-# GoRL Dependencies
-
-# JAX (GPU version)
-jax[cuda12]==0.7.2
-jax-dataclasses>=1.4.0
-
-# CLI and utilities
-tyro>=0.5.0
-numpy>=1.24.0
-tqdm>=4.65.0
-
-# MuJoCo environment
-mujoco==3.3.6
-mujoco-mjx==3.3.6
-playground==0.0.5
+-c configs/environment/cuda12-py312-linux-x86_64.txt
+-e .[train,cuda12]

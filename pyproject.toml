@@ -1,0 +1,92 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gorl"
+version = "0.1.0"
+description = "Generative online reinforcement learning with flow and diffusion policies"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "MIT"
+license-files = ["src/gorl/LICENSE", "src/gorl/THIRD_PARTY_NOTICES.md"]
+authors = [
+    {name = "Chubin Zhang"},
+    {name = "Zhenglin Wan"},
+    {name = "Feng Chen"},
+    {name = "Fuchao Yang"},
+    {name = "Lang Feng"},
+    {name = "Yaxin Zhou"},
+    {name = "Xingrui Yu"},
+    {name = "Yang You"},
+    {name = "Ivor Tsang"},
+    {name = "Bo An"},
+]
+keywords = [
+    "reinforcement-learning",
+    "flow-matching",
+    "diffusion-policy",
+    "jax",
+    "mujoco",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = ["packaging>=24,<27"]
+
+[project.optional-dependencies]
+train = [
+    "brax==0.14.0",
+    "flax==0.12.0",
+    "jax==0.7.2",
+    "jax-dataclasses==1.6.3",
+    "mediapy==1.2.6",
+    "mujoco==3.3.6",
+    "mujoco-mjx==3.3.6",
+    "numpy==2.4.3",
+    "optax==0.2.6",
+    "playground==0.0.5",
+    "tyro==1.0.3",
+    "wandb>=0.25,<0.26",
+]
+cuda12 = ["jax[cuda12]==0.7.2"]
+tracking = ["wandb>=0.25,<0.26"]
+
+[project.urls]
+Paper = "https://proceedings.mlr.press/v306/zhang26fu.html"
+arXiv = "https://arxiv.org/abs/2512.02581"
+Repository = "https://github.com/bennidict23/GoRL"
+Issues = "https://github.com/bennidict23/GoRL/issues"
+
+[project.scripts]
+gorl = "gorl.cli:main"
+gorl-fetch-dependencies = "gorl.release_tools:fetch_dependencies_main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+flow_policy = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+gorl = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+
+[tool.setuptools.data-files]
+"share/gorl" = ["requirements.txt"]
+"share/gorl/constraints" = ["configs/environment/cuda12-py312-linux-x86_64.txt"]
+"share/gorl/configs/tasks" = ["configs/tasks/*.toml"]
+"share/gorl/configs/methods" = ["configs/methods/*.toml"]
+"share/gorl/tools" = [
+    "scripts/fetch_dependencies.py",
+]
+"share/gorl/tools/patches" = ["scripts/patches/*.patch"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"

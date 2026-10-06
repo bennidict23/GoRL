@@ -1,0 +1,64 @@
+schema_version = 1
+method = "ppo"
+family = "baseline"
+
+[training]
+total_env_steps = 180000000
+
+[ppo]
+learning_rate = 0.0003
+clip_epsilon = 0.1
+entropy_cost = 0.01
+discounting = 0.995
+gae_lambda = 0.95
+reward_scaling = 10.0
+episode_length = 1000
+normalize_observations = true
+normalize_advantage = true
+num_envs = 2048
+num_eval_envs = 128
+batch_size = 1024
+num_minibatches = 32
+unroll_length = 30
+num_updates_per_batch = 16
+num_evals = 31
+
+[evaluation]
+episodes = 128
+deterministic = true
+
+[smoke]
+env_steps = 128
+episode_length = 20
+num_envs = 32
+num_eval_envs = 4
+batch_size = 16
+num_minibatches = 2
+unroll_length = 4
+num_updates_per_batch = 1
+num_evals = 2
+
+[[upstream_dependencies]]
+name = "fpo"
+url = "https://github.com/akanazawa/fpo.git"
+commit = "418c2554f7cd22d52e14c07d951280929d73bf2f"
+relative_path = "external/fpo"
+
+[profile_overrides.dm_control.ppo]
+value_loss_coeff = 0.25
+
+[profile_overrides.humanoid]
+upstream_dependencies = []
+
+[profile_overrides.humanoid.runtime]
+humanoid_ppo_execution_profile = "official_direct_compat"
+
+[profile_overrides.humanoid.ppo]
+action_repeat = 1
+episode_length = 1000
+learning_rate = 0.001
+clip_epsilon = 0.3
+max_grad_norm = "none"
+
+[profile_overrides.humanoid.evaluation]
+deterministic = false

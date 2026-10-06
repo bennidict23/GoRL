@@ -1,0 +1,141 @@
+schema_version = 1
+task = "HumanoidStand"
+profile = "humanoid"
+target_return = 900.0
+stage_steps = [60000000, 60000000, 30000000, 30000000]
+
+[environment]
+suite = "dm_control"
+backend = "mujoco_playground"
+action_semantics = "bounded"
+
+[runtime]
+jax_default_matmul_precision = "highest"
+xla_gpu_triton_gemm_any = true
+
+[method_overrides.gorl_fm.runtime]
+humanoid_ppo_execution_profile = "native"
+
+[method_overrides.gorl_fm.ppo.later_stages]
+learning_rate = 0.0003
+
+[method_overrides.gorl_fm.training]
+encoder_handoff = "best"
+stage0_encoder_initialization = "fresh"
+teacher_requested_env_steps = 180000000
+teacher_actual_env_steps = 185794560
+teacher_deterministic_report = true
+teacher_dataset_min_return_mean = 60.0
+downstream_xla_gpu_triton_gemm_any = "unset"
+
+[method_overrides.gorl_fm.collection]
+episodes = 128
+teacher_episodes = 1024
+num_envs = 64
+transition_order = "batched_time_major"
+teacher_transition_order = "episode_major"
+seed_schedule = "fixed"
+
+[method_overrides.gorl_fm.decoder]
+seed_schedule = "fixed"
+
+[method_overrides.gorl_fm.decoder.stage0]
+epochs = 100
+initialization = "fresh"
+pairwise_loss_weight = 0.0
+seed_role = "teacher"
+
+[method_overrides.gorl_fm.decoder.later_stages]
+epochs = 20
+initialization = "warm"
+seed_role = "decoder"
+
+[method_overrides.gorl_fm.decoder.stage1]
+pairwise_loss_weight = 0.1
+warm_observation_stats_mode = "cumulative"
+
+[method_overrides.gorl_fm.decoder.stage2]
+pairwise_loss_weight = 100.0
+warm_observation_stats_mode = "frozen"
+
+[method_overrides.gorl_fm.decoder.stage3]
+pairwise_loss_weight = 100.0
+warm_observation_stats_mode = "frozen"
+
+[method_overrides.gorl_diffusion.runtime]
+humanoid_ppo_execution_profile = "native"
+
+[method_overrides.gorl_diffusion.ppo.stage1]
+learning_rate = 0.0003
+
+[method_overrides.gorl_diffusion.ppo.stage2]
+learning_rate = 0.0001
+max_grad_norm = 0.5
+
+[method_overrides.gorl_diffusion.ppo.stage3]
+learning_rate = 0.0001
+max_grad_norm = 0.5
+
+[method_overrides.gorl_diffusion.training]
+encoder_handoff = "best"
+stage0_encoder_initialization = "fresh"
+teacher_requested_env_steps = 180000000
+teacher_actual_env_steps = 185794560
+teacher_deterministic_report = true
+teacher_dataset_min_return_mean = 60.0
+downstream_xla_gpu_triton_gemm_any = "unset"
+
+[method_overrides.gorl_diffusion.collection]
+episodes = 128
+teacher_episodes = 1024
+num_envs = 64
+transition_order = "batched_time_major"
+teacher_transition_order = "episode_major"
+seed_schedule = "fixed"
+
+[method_overrides.gorl_diffusion.decoder]
+split_unit = "transition"
+batch_sampling = "epoch_permutation"
+seed_schedule = "fixed"
+
+[method_overrides.gorl_diffusion.decoder.stage0]
+type = "fm"
+convention = "reverse"
+epochs = 100
+initialization = "fresh"
+pairwise_loss_weight = 0.0
+zero_final_layer = false
+checkpoint_metric = "val_loss"
+samples_per_action = 8
+seed_role = "teacher"
+rng_schedule = "state_threaded"
+validation_schedule = "epoch_full_batches"
+early_stopping_patience = 20
+
+[method_overrides.gorl_diffusion.decoder.later_stages]
+type = "diffusion"
+epochs = 50
+initialization = "warm"
+pairwise_loss_weight = 0.1
+diffusion_parameterization = "epsilon"
+diffusion_schedule = "cosine_alpha_bar"
+samples_per_action = 8
+timestep_embedding_dim = 8
+output_scale = 1.0
+zero_final_layer = false
+seed_role = "decoder"
+rng_schedule = "state_threaded"
+validation_schedule = "epoch_full_batches"
+early_stopping_patience = 20
+
+[method_overrides.gorl_diffusion.decoder.stage1]
+type = "diffusion"
+epochs = 50
+initialization = "fresh"
+pairwise_loss_weight = 0.1
+
+[method_overrides.gorl_diffusion.decoder.stage2]
+warm_observation_stats_mode = "legacy_new_batch"
+
+[method_overrides.gorl_diffusion.decoder.stage3]
+warm_observation_stats_mode = "legacy_new_batch"

@@ -1,167 +1,159 @@
-# GoRL: An Algorithm-Agnostic Framework for Online RL with Generative Policies
+# GoRL: Generative Online Reinforcement Learning
 
+Chubin Zhang<sup>1,*</sup>, Zhenglin Wan<sup>2,*</sup>, Feng Chen<sup>1</sup>,
+Fuchao Yang<sup>1</sup>, Lang Feng<sup>1</sup>, Yaxin Zhou<sup>3</sup>,
+Xingrui Yu<sup>4,5</sup>, Yang You<sup>2</sup>, Ivor Tsang<sup>1,4,5</sup>, Bo An<sup>1</sup>
 
-*Chubin Zhang\*<sup>1</sup>,
-Zhenglin Wan\*<sup>2</sup>,
-Feng Chen<sup>2</sup>,
-Xingrui Yu<sup>3</sup>,
-Ivor Tsang<sup>3</sup>,
-Bo An<sup>2</sup>*
+<sup>1</sup> Nanyang Technological University · <sup>2</sup> National University of Singapore ·
+<sup>3</sup> Carnegie Mellon University<br>
+<sup>4</sup> CFAR, A*STAR · <sup>5</sup> IHPC, A*STAR
 
-<sup>1</sup>BUPT, China
-<sup>2</sup>NTU, Singapore  <sup>3</sup>Centre for Frontier AI Research, A*STAR, Singapore 
+*Equal contribution.*
 
-(\*: Equal contribution)
-<p align="center">
-  <a href="https://arxiv.org/abs/2512.02581">
-    <img src="https://img.shields.io/badge/arXiv-Paper-red?style=flat-square&logo=arxiv" alt="arXiv Paper"></a>
-  &nbsp;
-  <a href="https://github.com/bennidict23/GoRL">
-    <img src="https://img.shields.io/badge/GitHub-Project-181717?style=flat-square&logo=github" alt="GitHub Project"></a>
-</p>
+[Paper — ICML 2026](https://proceedings.mlr.press/v306/zhang26fu.html) ·
+[arXiv preprint](https://arxiv.org/abs/2512.02581)
 
-**GoRL（Generative Online Reinforcement Learning）** is a framework that enables stable online RL with generative policies (Flow Matching / Diffusion) via latent-generative factorization.
+## Method
 
-## 📖 Table of Contents
+GoRL separates a generative policy into a PPO-trained latent encoder and a
+flow-matching or diffusion action decoder:
 
-- [Key Features](#-key-features)
-- [Method](#-method)
-- [Directory Structure](#-directory-structure)
-- [Installation](#-installation)
-- [Usage](#-usage)
-- [Results](#-results)
-- [Acknowledgement](#-acknowledgement)
-- [Citation](#-citation)
-- [License](#-license)
-
-## ✨ Key Features
-
-| Feature | Description |
-| ------- | ----------- |
-| **Structural Decoupling** | Separates decision intent (Encoder) from physical execution (Decoder) to resolve the stability-expressiveness tension |
-| **Algorithm-Agnostic** | Modular design compatible with any RL optimizer (e.g., PPO, SAC) for the latent policy |
-| **Generative Expressiveness** | Supports Flow Matching and Diffusion to model complex, multimodal action distributions |
-| **Stable Optimization** | Avoids deep gradient backpropagation by computing updates in a tractable latent space |
-| **Two-Time-Scale Schedule** | Alternates between policy optimization and generative refinement |
-
-## 🧠 Method
-
-Standard generative policies often fail in online RL due to intractable likelihoods and noisy gradients. GoRL addresses this via a **Latent-Generative Factorization**:
-
-$$\pi(a|s) = \int \pi_\phi(a|s, \varepsilon) \, \pi_\theta(\varepsilon|s) \, d\varepsilon$$
-
-<p align="center">
-    <img src="./docs/framework.png" alt="GoRL Framework" width="100%">
-</p>
-
-The framework consists of two distinct components:
-
-- **Encoder** $\pi_\theta(\varepsilon|s)$ (Decision Intent): A tractable latent policy (optimized via PPO) that learns high-level intents in a tractable Gaussian space.
-- **Decoder** $g_\phi(s, \varepsilon)$ (Physical Execution): A conditional generative model (optimized via Flow Matching or Diffusion) that translates latent intents into complex, multimodal actions.
-
-**Why it works:** Instead of optimizing the generative model directly in action space (which causes instability), GoRL performs stable gradient updates on the encoder. The decoder is trained separately via supervised regression to map a Fixed Gaussian Prior $\mathcal{N}(0,I)$ to high-reward actions, ensuring robust improvement without stagnation.
-
-The training proceeds in multiple stages:
-
-1. **Stage 0**: Initialize decoder as identity mapping, train encoder with PPO
-2. **Stage 1+**: Collect data → Update decoder → Update encoder → Repeat
-
-## 📂 Directory Structure
-
-```
-.
-├── scripts/
-│   ├── run_gorl_fm.py           - Main script: GoRL with Flow Matching
-│   ├── run_gorl_diffusion.py    - Main script: GoRL with Diffusion
-│   ├── train_ppo.py             - Baseline: Gaussian PPO
-│   ├── train_fpo.py             - Baseline: Flow Policy Optimization
-│   └── components/              - Internal pipeline scripts
-│
-└── src/flow_policy/
-    ├── encoder_ppo.py           - Encoder (PPO in latent space)
-    ├── decoder_fm.py            - Decoder (Flow Matching)
-    ├── decoder_diffusion.py     - Decoder (Diffusion)
-    ├── agent.py                 - Combined Encoder + Decoder agent
-    ├── ppo.py                   - PPO implementation
-    ├── fpo.py                   - FPO implementation
-    ├── networks.py              - Neural network architectures
-    └── rollouts.py              - Trajectory collection utilities
+```text
+observation → PPO encoder → latent action → frozen decoder → environment action
 ```
 
-## 🛠️ Installation
+Training alternates between collecting policy data, fitting the decoder, and
+optimizing the encoder with the decoder frozen. The six standard tasks start
+with an identity decoder. Humanoid tasks first train a fresh Brax PPO teacher.
+No pretrained checkpoint or dataset is required.
 
-Tested with Python 3.12 on CUDA GPUs.
+## Installation
+
+Tested on Linux with Python 3.12 and NVIDIA CUDA 12.
 
 ```bash
-# Clone the repository
 git clone https://github.com/bennidict23/GoRL.git
 cd GoRL
-
-# Create conda environment
-conda create -n GoRL python=3.12
-conda activate GoRL
-
-# Install dependencies
-pip install -r requirements.txt
+unset PYTHONPATH PYTHONHOME
+export PYTHONNOUSERSITE=1
+conda create -n gorl python=3.12 pip=25.0.1
+conda activate gorl
+python -m pip install -r requirements.txt
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+export MUJOCO_GL=egl
 ```
 
-## 🚀 Usage
+Run a small training experiment:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 gorl train --task CheetahRun --method gorl_fm --seed 1 --smoke
+```
+
+The first run compiles JAX kernels and may be quiet for several minutes.
+`--smoke` checks execution, not benchmark performance.
+
+## Usage
 
 ### GoRL
 
-```bash
-# GoRL with Flow Matching
-CUDA_VISIBLE_DEVICES=0 python scripts/run_gorl_fm.py --env_name FingerSpin --num_stages 4 --seed 1
+Remove `--smoke` to use the full training schedule:
 
-# GoRL with Diffusion
-CUDA_VISIBLE_DEVICES=0 python scripts/run_gorl_diffusion.py --env_name FingerSpin --num_stages 4 --seed 1
+```bash
+# Flow matching
+CUDA_VISIBLE_DEVICES=0 gorl train --task CheetahRun --method gorl_fm --seed 1
+
+# Diffusion
+CUDA_VISIBLE_DEVICES=0 gorl train --task CheetahRun --method gorl_diffusion --seed 1
 ```
+
+The same command works for every task. Profiles are selected automatically.
+
+| Tasks | GoRL schedule |
+| --- | --- |
+| CheetahRun, FingerSpin, FingerTurnHard, FishSwim, HopperStand, WalkerWalk | 60M / 60M / 30M / 30M |
+| HumanoidStand | 60M / 60M / 30M / 30M |
+| HumanoidRun | 60M backbone anchor + 60M / 60M latent stages |
+
+Humanoid GoRL additionally trains its teacher for 180M requested PPO steps
+(about 185.79M after update rounding), outside the nominal schedule above.
+Humanoid PPO uses Brax; the other PPO tasks use the FPO backend.
 
 ### Baselines
 
+Fetch the pinned baseline code once; Git is required:
+
 ```bash
-# PPO
-CUDA_VISIBLE_DEVICES=0 python scripts/train_ppo.py --env_name FingerSpin --seed 1
+gorl-fetch-dependencies --dependency all --destination-root external
 
-# FPO
-CUDA_VISIBLE_DEVICES=0 python scripts/train_fpo.py --env_name FingerSpin --seed 1
-
-# DPPO
-CUDA_VISIBLE_DEVICES=0 python scripts/train_fpo.py --env_name FingerSpin --seed 1 --config.loss_mode denoising_mdp
+CUDA_VISIBLE_DEVICES=0 gorl train --task CheetahRun --method ppo --seed 1
+CUDA_VISIBLE_DEVICES=0 gorl train --task CheetahRun --method fpo --seed 1
+CUDA_VISIBLE_DEVICES=0 gorl train --task CheetahRun --method dppo --seed 1
 ```
 
-Run with `--help` to see all available options.
+Baselines use a single 180M-step training budget.
 
-## 📊 Results
+### Outputs and W&B
 
-We evaluate GoRL on 6 MuJoCo continuous control tasks from DMControl, comparing against FPO, DPPO, and Gaussian PPO baselines.
+Runs are saved under `runs/`. Final return is the last evaluation, not the best.
 
-<p align="center">
-    <img src="./docs/results.png" alt="results" width="100%">
-</p>
+W&B is optional and disabled by default:
 
-GoRL (PPO+FM) and GoRL (PPO+Diffusion) achieve competitive or superior performance across all environments, demonstrating the effectiveness of the latent-generative factorization approach.
+```bash
+wandb login
+gorl train --task CheetahRun --method gorl_fm --seed 1 --wandb-mode online
+```
 
-## 🙏 Acknowledgement
+Use `--wandb-mode offline` without an account. Curves stay continuous across stages.
 
-Our PPO and FPO implementations are based on the official [FPO repository](https://github.com/akanazawa/fpo) and follow the hyperparameters from the original paper. We thank the authors for open-sourcing their code.
+## Configuration
 
-## 📝 Citation
+Defaults are in `configs/tasks/` and `configs/methods/`. Use `--config FILE.toml`
+for overrides and `gorl train --help` for options. Keep hyperparameters fixed
+when comparing seeds. All role seeds default to `--seed`.
 
-If you find this code useful, please cite our paper:
+To train both Humanoid variants using one freshly trained teacher:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 gorl train-pair --task HumanoidRun \
+  --teacher-seed 1 --fm-seed 1 --diffusion-seed 3 --gpus 0 1
+```
+
+Smoke runs are not a full-budget performance guarantee. HumanoidStand Diffusion
+can have large decoder-switch drops or non-finite training. Teacher training
+and collection consume additional interactions beyond the nominal schedule.
+Training-state resume is not supported.
+
+## Code structure
+
+```text
+configs/    Task, method, and dependency settings
+scripts/    Baseline dependency setup
+src/        GoRL algorithms and baseline adapters
+```
+
+## Acknowledgement
+
+GoRL builds on [FPO](https://github.com/akanazawa/fpo),
+[Brax](https://github.com/google/brax), and
+[MuJoCo Playground](https://github.com/google-deepmind/mujoco_playground).
+See [third-party notices](src/gorl/THIRD_PARTY_NOTICES.md).
+
+## Citation
 
 ```bibtex
-@misc{zhang2025gorlalgorithmagnosticframeworkonline,
-      title={GoRL: An Algorithm-Agnostic Framework for Online Reinforcement Learning with Generative Policies}, 
-      author={Chubin Zhang and Zhenglin Wan and Feng Chen and Xingrui Yu and Ivor Tsang and Bo An},
-      year={2025},
-      eprint={2512.02581},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2512.02581}, 
+@inproceedings{pmlr-v306-zhang26fu,
+  title     = {Generative Online Reinforcement Learning},
+  author    = {Zhang, Chubin and Wan, Zhenglin and Chen, Feng and Yang, Fuchao and Feng, Lang and Zhou, Yaxin and Yu, Xingrui and You, Yang and Tsang, Ivor and An, Bo},
+  booktitle = {Proceedings of the 43rd International Conference on Machine Learning},
+  year      = {2026},
+  volume    = {306},
+  pages     = {158816--158837},
+  series    = {Proceedings of Machine Learning Research},
+  publisher = {PMLR},
+  url       = {https://proceedings.mlr.press/v306/zhang26fu.html}
 }
 ```
 
-## 📄 License
+## License
 
-MIT License
+[MIT License](src/gorl/LICENSE).

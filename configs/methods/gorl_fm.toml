@@ -1,0 +1,123 @@
+schema_version = 1
+method = "gorl_fm"
+family = "gorl"
+
+[ppo]
+action_repeat = 1
+batch_size = 1024
+discounting = 0.995
+entropy_cost = 0.01
+episode_length = 1000
+gae_lambda = 0.95
+normalize_advantage = true
+normalize_observations = true
+num_envs = 2048
+num_eval_envs = 128
+num_evals = 10
+num_minibatches = 32
+num_updates_per_batch = 16
+reward_scaling = 10.0
+unroll_length = 30
+
+[ppo.stage0]
+learning_rate = 0.001
+
+[ppo.later_stages]
+learning_rate = 0.001
+
+[profile_overrides.dm_control.ppo]
+fresh_encoder_each_stage = true
+tanh_entropy_correction = false
+observation_stats_accumulation = "cumulative"
+observation_stats_timing = "rollout_consistent"
+
+[profile_overrides.dm_control.collection]
+seed_offset = 1
+
+[profile_overrides.dm_control.ppo.stage0]
+clip_epsilon = 0.15
+z_regularization = 0.0005
+max_grad_norm = 0.5
+policy_scale_cap = 10.0
+
+[profile_overrides.dm_control.ppo.later_stages]
+clip_epsilon = 0.3
+z_regularization = 0.001
+max_grad_norm = 0.5
+policy_scale_cap = 10.0
+
+[collection]
+episodes = 4096
+num_envs = 64
+stochastic = true
+action_semantics = "legacy_pre_tanh"
+
+[decoder]
+type = "fm"
+convention = "reverse"
+target = "action_pre_tanh"
+target_clip = 3.0
+train_steps = 50000
+batch_size = 8192
+learning_rate = 0.0003
+hidden_sizes = [128, 128, 128, 128]
+samples_per_action = 8
+normalize_observations = true
+checkpoint_metric = "val_loss"
+initialization = "fresh"
+split_unit = "episode"
+batch_sampling = "with_replacement"
+rng_schedule = "independent_streams"
+validation_schedule = "interval_sampled"
+
+[evaluation]
+episodes = 128
+deterministic = true
+
+[smoke]
+stage_steps = [128, 128, 128, 128]
+collection_episodes = 8
+decoder_train_steps = 2
+decoder_batch_size = 32
+episode_length = 20
+num_envs = 32
+num_eval_envs = 4
+batch_size = 16
+num_minibatches = 2
+unroll_length = 4
+num_updates_per_batch = 1
+num_evals = 2
+
+[profile_overrides.humanoid.ppo]
+bounded_latent = true
+latent_dim = 21
+
+[profile_overrides.humanoid.runtime]
+humanoid_ppo_execution_profile = "official_direct_compat"
+
+[profile_overrides.humanoid.ppo.stage0]
+clip_epsilon = 0.3
+
+[profile_overrides.humanoid.ppo.later_stages]
+clip_epsilon = 0.3
+
+[profile_overrides.humanoid.collection]
+episodes = 1024
+teacher_episodes = 1024
+num_envs = 64
+action_semantics = "bounded"
+teacher_seed_role = "teacher"
+
+[profile_overrides.humanoid.decoder]
+target = "action_bounded"
+target_clip = 1.0
+split_unit = "transition"
+batch_sampling = "epoch_permutation"
+checkpoint_metric = "val_loss"
+zero_final_layer = false
+rng_schedule = "state_threaded"
+validation_schedule = "epoch_full_batches"
+early_stopping_patience = 20
+
+[profile_overrides.humanoid.evaluation]
+deterministic = false

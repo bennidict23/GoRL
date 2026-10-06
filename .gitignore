@@ -1,22 +1,28 @@
-# Python
 __pycache__/
 *.py[cod]
-*.so
-.Python
+*.egg-info/
+.coverage
+.pytest_cache/
+.ruff_cache/
+.venv/
 build/
 dist/
-*.egg-info/
 
-# Results and checkpoints
-results/
+# Local experiment state.
+runs/
+wandb/
+external/
+*.log
 *.pkl
-data/
+*.npz
+*.npy
+*.ckpt
+*.pt
+*.pth
+.env
+.env.local
 
-# IDE
+# Local editor and operating-system files.
+.DS_Store
 .idea/
 .vscode/
-*.swp
-
-# OS
-.DS_Store
-Thumbs.db

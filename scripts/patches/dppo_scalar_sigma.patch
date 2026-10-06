@@ -1,0 +1,23 @@
+diff --git a/playground/src/flow_policy/fpo.py b/playground/src/flow_policy/fpo.py
+index 1b2409b..a5a2184 100644
+--- a/playground/src/flow_policy/fpo.py
++++ b/playground/src/flow_policy/fpo.py
+@@ -1 +1,3 @@
++# Modified by GoRL Authors for the DPPO scalar-sigma compatibility fix.
++
+ from __future__ import annotations
+@@ -283,10 +283,12 @@ class FpoState:
+         expected_x_t_next = x_t + dt[None, :, None] * velocity_pred
+         assert expected_x_t_next.shape == x_t_next.shape
+ 
+-        # Compute realized noise with fixed sigma.
++        # Compute realized noise with fixed scalar sigma. Sampling uses the same
++        # scalar in sample_action, so the likelihood path should broadcast it
++        # directly instead of indexing it as a per-step schedule.
+         realized_noise = (x_t_next - expected_x_t_next) / (
+             self.config.sde_sigma + 1e-6
+-        )[None, :, None]
++        )
+         assert realized_noise.shape == x_t_next.shape
+ 
+         # Log probability of standard normal: -0.5 * ||z||^2 - d/2 * log(2pi).

@@ -1,3 +1,5 @@
+# Modified by the GoRL authors; see THIRD_PARTY_NOTICES.md.
+
 from __future__ import annotations
 
 
@@ -59,6 +61,16 @@ class RunningStats:
     def update(self, x: Array) -> RunningStats:
         """Update running stats with a new batch of observations."""
 
+        return self._update(x, retain_previous_variance=True)
+
+    def update_legacy_batch_only(self, x: Array) -> RunningStats:
+        """Update while discarding variance accumulated before this batch."""
+
+        return self._update(x, retain_previous_variance=False)
+
+    def _update(self, x: Array, *, retain_previous_variance: bool) -> RunningStats:
+        """Merge one observation batch into the running moments."""
+
         batch_ndims = x.ndim - self.mean.ndim
         assert x.shape[batch_ndims:] == self.mean.shape == self.var_sum.shape
 
@@ -67,8 +79,13 @@ class RunningStats:
         new_mean = (
             self.mean + jnp.sum(diff_to_old_mean, axis=range(batch_ndims)) / new_count
         )
-        new_var_sum = jnp.sum(
+        new_batch_var_sum = jnp.sum(
             diff_to_old_mean * (x - new_mean), axis=range(batch_ndims)
+        )
+        new_var_sum = (
+            self.var_sum + new_batch_var_sum
+            if retain_previous_variance
+            else new_batch_var_sum
         )
         var_clipped = jnp.clip(new_var_sum / new_count, 1e-12, 1e12)
         return RunningStats(

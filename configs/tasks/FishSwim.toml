@@ -1,0 +1,24 @@
+schema_version = 1
+task = "FishSwim"
+profile = "dm_control"
+target_return = 646.0
+stage_steps = [60000000, 60000000, 30000000, 30000000]
+
+[environment]
+suite = "dm_control"
+backend = "mujoco_playground"
+action_semantics = "legacy_pre_tanh"
+
+[method_overrides.gorl_fm.ppo]
+observation_stats_accumulation = "legacy_batch_only"
+observation_stats_timing = "legacy_pre_update"
+
+[method_overrides.gorl_fm.decoder]
+checkpoint_metric = "val_endpoint_mse"
+split_unit = "episode"
+batch_sampling = "with_replacement"
+rng_schedule = "legacy_interleaved"
+validation_schedule = "interval_sampled"
+
+[method_overrides.gorl_diffusion.ppo.stage3]
+entropy_cost = 0.005

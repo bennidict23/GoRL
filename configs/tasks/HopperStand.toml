@@ -1,0 +1,21 @@
+schema_version = 1
+task = "HopperStand"
+profile = "dm_control"
+target_return = 833.0
+stage_steps = [60000000, 60000000, 30000000, 30000000]
+
+[environment]
+suite = "dm_control"
+backend = "mujoco_playground"
+action_semantics = "legacy_pre_tanh"
+
+[method_overrides.gorl_fm.decoder]
+hidden_sizes = [64, 64, 64, 64]
+target_clip = 0.0
+
+[method_overrides.gorl_diffusion.ppo.stage0]
+observation_stats_accumulation = "legacy_batch_only"
+observation_stats_timing = "legacy_pre_update"
+
+[method_overrides.gorl_diffusion.ppo.stage1]
+encoder_initialization = "fresh"

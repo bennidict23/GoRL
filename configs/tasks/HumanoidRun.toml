@@ -1,0 +1,78 @@
+schema_version = 1
+task = "HumanoidRun"
+profile = "humanoid"
+target_return = 300.0
+stage_steps = [60000000, 60000000]
+
+[environment]
+suite = "dm_control"
+backend = "mujoco_playground"
+action_semantics = "bounded"
+
+[runtime]
+jax_default_matmul_precision = "highest"
+xla_gpu_triton_gemm_any = true
+
+[method_overrides.gorl_fm.training]
+benchmark_start_env_steps = 60000000
+teacher_requested_env_steps = 180000000
+teacher_actual_env_steps = 185794560
+teacher_dataset_min_return_mean = 15.0
+downstream_xla_gpu_triton_gemm_any = "unset"
+encoder_handoff = "best"
+stage0_encoder_initialization = "teacher_warm_start"
+
+[method_overrides.gorl_fm.ppo.later_stages]
+learning_rate = 0.001
+
+[method_overrides.gorl_fm.collection]
+seed_schedule = "fixed"
+transition_order = "batched_time_major"
+teacher_transition_order = "batched_time_major"
+
+[method_overrides.gorl_fm.decoder]
+epochs = 100
+initialization = "fresh"
+pairwise_loss_weight = 0.0
+seed_role = "decoder"
+seed_schedule = "fixed"
+
+[method_overrides.gorl_diffusion.training]
+benchmark_start_env_steps = 60000000
+teacher_requested_env_steps = 180000000
+teacher_actual_env_steps = 185794560
+teacher_dataset_min_return_mean = 15.0
+downstream_xla_gpu_triton_gemm_any = "unset"
+encoder_handoff = "final"
+stage0_encoder_initialization = "teacher_warm_start"
+
+[method_overrides.gorl_diffusion.ppo.stage1]
+learning_rate = 0.001
+
+[method_overrides.gorl_diffusion.collection]
+episodes = 1024
+num_envs = 64
+transition_order = "batched_time_major"
+seed_schedule = "fixed"
+
+[method_overrides.gorl_diffusion.decoder]
+epochs = 50
+batch_size = 8192
+learning_rate = 0.0003
+hidden_sizes = [128, 128, 128, 128]
+diffusion_steps = 10
+diffusion_parameterization = "epsilon"
+diffusion_schedule = "cosine_alpha_bar"
+initialization = "fresh"
+pairwise_loss_weight = 0.0
+samples_per_action = 8
+timestep_embedding_dim = 8
+output_scale = 1.0
+zero_final_layer = false
+split_unit = "transition"
+batch_sampling = "epoch_permutation"
+seed_role = "decoder"
+seed_schedule = "fixed"
+rng_schedule = "state_threaded"
+validation_schedule = "epoch_full_batches"
+early_stopping_patience = 20

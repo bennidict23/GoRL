@@ -1,0 +1,16 @@
+schema_version = 1
+task = "FingerSpin"
+profile = "dm_control"
+target_return = 950.0
+stage_steps = [60000000, 60000000, 30000000, 30000000]
+
+[environment]
+suite = "dm_control"
+backend = "mujoco_playground"
+action_semantics = "legacy_pre_tanh"
+
+[ppo]
+discounting = 0.95
+
+[method_overrides.gorl_fm.decoder]
+checkpoint_metric = "val_endpoint_mse"

@@ -1,3 +1,5 @@
+# Modified by the GoRL authors; see THIRD_PARTY_NOTICES.md.
+
 from __future__ import annotations
 
 import jax
@@ -32,12 +34,37 @@ class PpoConfig:
 
     gae_lambda: float = 0.95
     normalize_advantage: jdc.Static[bool] = True
-    clipping_epsilon: float = 0.1  # 论文Table A.1最优值
+    clipping_epsilon: float = 0.3
 
     value_loss_coeff: float = 0.25
+    max_grad_norm: jdc.Static[float] = 0.0
+    max_policy_scale: jdc.Static[float] = 0.0
+    z_regularization: float = 0.0
+    use_tanh_entropy_correction: jdc.Static[bool] = True
+    observation_stats_accumulation: jdc.Static[str] = "cumulative"
+    observation_stats_timing: jdc.Static[str] = "rollout_consistent"
 
     def __post_init__(self):
-        assert self.action_repeat == 1  # "action repeat is dumb" - Kevin (?)
+        if self.action_repeat != 1:
+            raise ValueError("flow_policy PPO requires action_repeat=1")
+        if self.max_policy_scale < 0.0:
+            raise ValueError("max_policy_scale must be non-negative")
+        if self.observation_stats_accumulation not in {
+            "cumulative",
+            "legacy_batch_only",
+        }:
+            raise ValueError(
+                "observation_stats_accumulation must be 'cumulative' or "
+                "'legacy_batch_only'"
+            )
+        if self.observation_stats_timing not in {
+            "rollout_consistent",
+            "legacy_pre_update",
+        }:
+            raise ValueError(
+                "observation_stats_timing must be 'rollout_consistent' or "
+                "'legacy_pre_update'"
+            )
 
     @property
     def iterations_per_env(self) -> int:
@@ -90,7 +117,7 @@ class PpoState:
 
         network_params = ActorCriticParams(actor_net, critic_net)
 
-        # We'll manage learning rate ourselves!
+        # Learning-rate scheduling is applied explicitly during updates.
         opt = optax.scale_by_adam()
         return PpoState(
             env=env,
@@ -111,7 +138,11 @@ class PpoState:
             obs_norm = (obs - self.obs_stats.mean) / self.obs_stats.std
         else:
             obs_norm = obs
-        action_dist = networks.gaussian_policy_fwd(self.params.policy, obs_norm)
+        action_dist = networks.gaussian_policy_fwd(
+            self.params.policy,
+            obs_norm,
+            max_scale=self.config.max_policy_scale,
+        )
         if deterministic:
             # Use deterministic action during evaluation.
             return action_dist.loc, PpoActionInfo(
@@ -125,17 +156,22 @@ class PpoState:
     def training_step(
         self, transitions: PpoTransition
     ) -> tuple[PpoState, dict[str, Array]]:
-        # We're use a (T, B) shape convention, corresponding to a "scan of the
+        # We use a (T, B) shape convention, corresponding to a "scan of the
         # vmap" and not a "vmap of the scan".
         config = self.config
         assert transitions.reward.shape == (config.iterations_per_env, config.num_envs)
-        # Update observation statistics and store them in the state.
+        optimization_state = self
         if self.config.normalize_observations:
-            with jdc.copy_and_mutate(self) as state:
-                state.obs_stats = self.obs_stats.update(transitions.obs)
+            if self.config.observation_stats_accumulation == "cumulative":
+                next_obs_stats = self.obs_stats.update(transitions.obs)
+            else:
+                next_obs_stats = self.obs_stats.update_legacy_batch_only(
+                    transitions.obs
+                )
+            if self.config.observation_stats_timing == "legacy_pre_update":
+                optimization_state = jdc.replace(self, obs_stats=next_obs_stats)
         else:
-            state = self
-        del self
+            next_obs_stats = self.obs_stats
 
         def step_batch(state: PpoState, _):
             step_prng = jax.random.fold_in(state.prng, state.steps)
@@ -155,9 +191,15 @@ class PpoState:
         # Do N updates over the full batch of transitions.
         state, metrics = jax.lax.scan(
             step_batch,
-            init=state,
+            init=optimization_state,
             length=config.num_updates_per_batch,
         )
+        if (
+            self.config.normalize_observations
+            and self.config.observation_stats_timing == "rollout_consistent"
+        ):
+            with jdc.copy_and_mutate(state) as state:
+                state.obs_stats = next_obs_stats
         return state, metrics
 
     def _step_minibatch(
@@ -184,7 +226,8 @@ class PpoState:
         assert isinstance(metrics, dict)
 
         # Track detailed gradient metrics
-        metrics["grad_norm"] = optax.global_norm(grads)
+        grad_norm_before = optax.global_norm(grads)
+        metrics["grad_norm_before_clip"] = grad_norm_before
         metrics["policy_grad_norm"] = optax.global_norm(grads.policy)
         metrics["value_grad_norm"] = optax.global_norm(grads.value)
 
@@ -193,6 +236,17 @@ class PpoState:
         metrics["policy_last_layer_grad_norm"] = jnp.linalg.norm(grads.policy[-1][0])
         metrics["value_first_layer_grad_norm"] = jnp.linalg.norm(grads.value[0][0])
         metrics["value_last_layer_grad_norm"] = jnp.linalg.norm(grads.value[-1][0])
+
+        if self.config.max_grad_norm > 0.0:
+            scale = jnp.minimum(
+                1.0, self.config.max_grad_norm / (grad_norm_before + 1e-8)
+            )
+            grads = jax.tree.map(lambda g: g * scale, grads)
+            metrics["grad_norm"] = optax.global_norm(grads)
+            metrics["grad_clipped"] = grad_norm_before > self.config.max_grad_norm
+        else:
+            metrics["grad_norm"] = grad_norm_before
+            metrics["grad_clipped"] = jnp.array(False)
 
         param_update, new_opt_state = self.opt.update(grads, self.opt_state)  # type: ignore
         param_update = jax.tree.map(
@@ -256,7 +310,11 @@ class PpoState:
                 gae_advantages.std() + 1e-8
             )
 
-        action_dist = networks.gaussian_policy_fwd(self.params.policy, obs_norm)
+        action_dist = networks.gaussian_policy_fwd(
+            self.params.policy,
+            obs_norm,
+            max_scale=self.config.max_policy_scale,
+        )
         new_log_probs = jnp.sum(action_dist.log_prob(transitions.action), axis=-1)
         old_log_probs = transitions.action_info.log_prob
         assert new_log_probs.shape == old_log_probs.shape
@@ -264,6 +322,7 @@ class PpoState:
         # Log action distribution statistics
         metrics["action_mean"] = jnp.mean(action_dist.loc)
         metrics["action_std"] = jnp.mean(action_dist.scale)
+        metrics["action_std_max"] = jnp.max(action_dist.scale)
         metrics["action_min"] = jnp.min(transitions.action)
         metrics["action_max"] = jnp.max(transitions.action)
         metrics["log_prob_diff"] = jnp.mean(new_log_probs - old_log_probs)
@@ -308,21 +367,27 @@ class PpoState:
         v_loss = jnp.mean(v_error**2) * self.config.value_loss_coeff
         metrics["v_loss"] = v_loss
 
-        entropy = jnp.mean(
-            jnp.sum(
-                action_dist.entropy()
-                # Add correction term since we pass actions through tanh before
-                # taking environment steps.
-                + math_utils.tanh_log_det_jacobian(action_dist.sample(entropy_prng)),
-                axis=-1,
+        entropy_terms = action_dist.entropy()
+        if self.config.use_tanh_entropy_correction:
+            # Add correction term when the policy output itself is passed through
+            # tanh before taking environment steps.
+            entropy_terms = entropy_terms + math_utils.tanh_log_det_jacobian(
+                action_dist.sample(entropy_prng)
             )
-        )
+        entropy = jnp.mean(jnp.sum(entropy_terms, axis=-1))
         metrics["entropy"] = entropy
         entropy_loss = -self.config.entropy_cost * entropy
         metrics["entropy_loss"] = entropy_loss
 
         # Compute the total loss that will be used for optimization
         total_loss = policy_loss + v_loss + entropy_loss
+        z_reg_loss = self.config.z_regularization * (
+            jnp.mean(jnp.square(action_dist.loc))
+            + jnp.mean(jnp.square(action_dist.scale))
+        )
+        total_loss = total_loss + z_reg_loss
+        metrics["z_reg_loss"] = z_reg_loss
+        metrics["z_l2_norm"] = jnp.sqrt(jnp.mean(jnp.square(transitions.action)))
         metrics["total_loss"] = total_loss
 
         return total_loss, metrics

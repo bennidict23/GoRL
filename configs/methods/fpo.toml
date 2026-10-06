@@ -1,0 +1,57 @@
+schema_version = 1
+method = "fpo"
+family = "baseline"
+
+[training]
+total_env_steps = 180000000
+
+[ppo]
+learning_rate = 0.0003
+clip_epsilon = 0.05
+entropy_cost = 0.0
+discounting = 0.995
+gae_lambda = 0.95
+reward_scaling = 10.0
+episode_length = 1000
+normalize_observations = true
+normalize_advantage = true
+value_loss_coeff = 0.25
+num_envs = 2048
+num_eval_envs = 128
+batch_size = 1024
+num_minibatches = 32
+unroll_length = 30
+num_updates_per_batch = 16
+num_evals = 31
+
+[decoder]
+type = "flow_policy"
+flow_steps = 10
+samples_per_action = 8
+output_mode = "u_but_supervise_as_eps"
+timestep_embedding_dim = 8
+policy_output_scale = 0.25
+
+[evaluation]
+episodes = 128
+deterministic = true
+
+[smoke]
+env_steps = 128
+episode_length = 20
+num_envs = 32
+num_eval_envs = 4
+batch_size = 16
+num_minibatches = 2
+unroll_length = 4
+num_updates_per_batch = 1
+num_evals = 2
+
+[[upstream_dependencies]]
+name = "fpo"
+url = "https://github.com/akanazawa/fpo.git"
+commit = "418c2554f7cd22d52e14c07d951280929d73bf2f"
+relative_path = "external/fpo"
+
+[profile_overrides.humanoid.environment]
+action_semantics = "legacy_pre_tanh"

@@ -1,10 +1,10 @@
 """Rollout helpers for Mujoco playground."""
 
+# Modified by the GoRL authors; see THIRD_PARTY_NOTICES.md.
+
 from __future__ import annotations
 
-from typing import Protocol, Self
-import os
-from pathlib import Path
+from typing import TYPE_CHECKING, Any, Protocol, Self
 
 import jax
 import jax_dataclasses as jdc
@@ -13,6 +13,11 @@ import numpy as onp
 from jax import Array
 from jax import numpy as jnp
 from mujoco import mjx
+
+if TYPE_CHECKING:
+    from wandb.sdk.wandb_run import Run
+else:
+    Run = Any
 
 
 @jdc.pytree_dataclass
@@ -75,47 +80,41 @@ class EvalOutputs:
     actions: Array  # shape: (T, B, action_dim)
     action_timestep_mask: Array  # shape: (T, B), 1 if action is valid, 0 if not
 
-    def log_to_file(self, results_dir: Path, step: int) -> None:
-        """Log evaluation metrics to local file.
+    def log_to_wandb(self, run: Run, step: int) -> None:
+        """Log evaluation metrics to Weights & Biases.
 
         Args:
-            results_dir: Directory to save results.
+            run: The wandb run to log to.
             step: The current training step.
         """
-        # Ensure results directory exists
-        results_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            import wandb
+        except ImportError as error:
+            raise RuntimeError(
+                "W&B logging requires the optional 'tracking' dependencies"
+            ) from error
 
-        # Save evaluation metrics to file
-        eval_file = results_dir / "eval_metrics.txt"
-        with open(eval_file, "a") as f:
-            f.write(f"\nStep: {step}\n")
-            f.write("-" * 50 + "\n")
+        metrics = {}
+        metrics.update(
+            {
+                f"eval/{k}": v
+                for k, v in jax.tree.map(onp.array, self.scalar_metrics).items()
+            }
+        )
 
-            # Write scalar metrics
-            for k, v in self.scalar_metrics.items():
-                f.write(f"{k}: {float(onp.array(v)):.4f}\n")
+        for key, values in self.histogram_metrics.items():
+            metrics[f"eval/{key}"] = wandb.Histogram(onp.array(values).tolist())
 
-            # Write histogram statistics
-            for key, values in self.histogram_metrics.items():
-                values_np = onp.array(values)
-                f.write(f"{key}_histogram_mean: {values_np.mean():.4f}\n")
-                f.write(f"{key}_histogram_std: {values_np.std():.4f}\n")
-                f.write(f"{key}_histogram_min: {values_np.min():.4f}\n")
-                f.write(f"{key}_histogram_max: {values_np.max():.4f}\n")
+        action_dim = self.actions.shape[-1]
+        flat_actions = self.actions.reshape(-1, action_dim)
+        flat_mask = self.action_timestep_mask.reshape(-1)
 
-            # Write action statistics
-            action_dim = self.actions.shape[-1]
-            flat_actions = self.actions.reshape(-1, action_dim)
-            flat_mask = self.action_timestep_mask.reshape(-1)
+        for i in range(action_dim):
+            masked_actions = flat_actions[:, i][flat_mask > 0]
+            if masked_actions.size > 0:
+                metrics[f"eval/action_{i}"] = wandb.Histogram(masked_actions.tolist())
 
-            for i in range(action_dim):
-                # Apply mask to get only valid actions
-                masked_actions = flat_actions[:, i][flat_mask > 0]
-                if masked_actions.size > 0:  # Only log if there are valid actions
-                    f.write(f"action_{i}_mean: {masked_actions.mean():.4f}\n")
-                    f.write(f"action_{i}_std: {masked_actions.std():.4f}\n")
-                    f.write(f"action_{i}_min: {masked_actions.min():.4f}\n")
-                    f.write(f"action_{i}_max: {masked_actions.max():.4f}\n")
+        run.log(metrics, step=step)
 
 
 @jdc.jit
@@ -130,10 +129,8 @@ def eval_policy(
     Returns:
         EvalOutputs: A dataclass containing evaluation metrics and histograms
     """
-    # Initialize rollout state
     rollout_state = BatchedRolloutState.init(agent_state.env, prng, num_envs)
 
-    # Perform rollouts without auto-resetting and with deterministic actions
     _, transitions = rollout_state.rollout(
         agent_state,
         episode_length=max_episode_length,
@@ -143,13 +140,9 @@ def eval_policy(
     )
     valid_mask = transitions.discount > 0.0
 
-    # Calculate rewards per episode by summing all rewards.
     rewards = jnp.sum(transitions.reward, axis=0)
-
-    # Count steps per episode based on valid mask.
     steps = jnp.sum(valid_mask, axis=0)
 
-    # Calculate scalar metrics
     scalar_metrics = {
         "reward_mean": jnp.mean(rewards),
         "reward_min": jnp.min(rewards),
@@ -161,18 +154,16 @@ def eval_policy(
         "steps_std": jnp.std(steps),
     }
 
-    # Histogram data for simple metrics
     histogram_metrics = {
         "reward": rewards.flatten(),
         "steps": steps.flatten(),
     }
 
-    # Return the EvalOutputs dataclass with all metrics and masked actions
     return EvalOutputs(
         scalar_metrics=scalar_metrics,
         histogram_metrics=histogram_metrics,
-        actions=transitions.action,  # Keep the original shape (T, B, action_dim)
-        action_timestep_mask=valid_mask,  # Shape (T, B)
+        actions=transitions.action,
+        action_timestep_mask=valid_mask,
     )
 
 
@@ -204,9 +195,6 @@ class BatchedRolloutState:
             first_obs=state.obs,  # type: ignore
             first_data=state.data,
             steps=jnp.zeros_like(state.done),
-            # steps=jax.random.randint(
-            #     prng, shape=state.done.shape, minval=0, maxval=1000
-            # ),
             num_envs=num_envs,
             prng=prng,
         )
@@ -255,13 +243,16 @@ class BatchedRolloutState:
             # Reset environment if auto_reset is True and env is done or truncated.
             next_state = state
             if auto_reset:
-                where_done = lambda x, y: jnp.where(
-                    done_or_tr.reshape(
-                        done_or_tr.shape + (1,) * (x.ndim - done_or_tr.ndim)
-                    ),
-                    x,
-                    y,
-                )
+
+                def where_done(x, y):
+                    return jnp.where(
+                        done_or_tr.reshape(
+                            done_or_tr.shape + (1,) * (x.ndim - done_or_tr.ndim)
+                        ),
+                        x,
+                        y,
+                    )
+
                 next_env_state = next_env_state.replace(  # type: ignore
                     obs=jax.tree.map(
                         where_done,
